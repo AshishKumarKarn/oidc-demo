@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>OIDC Demo — Request/Response Flow</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: #1f2933; font-size: 12px; line-height: 1.5; margin: 0; }
+  code, pre { font-family: "SF Mono", "Menlo", "Consolas", monospace; }
+  h1 { font-size: 27px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 30px 0 10px; padding-bottom: 5px; border-bottom: 2px solid #2d6cdf; color: #14315e; page-break-after: avoid; }
+  h3 { font-size: 14px; margin: 0 0 8px; color: #14315e; page-break-after: avoid; }
+  p { margin: 0 0 9px; }
+  .cover { padding: 40px 0 10px; border-bottom: 1px solid #e0e0e0; }
+  .cover .sub { color: #607d8b; font-size: 14px; }
+  .meta { margin-top: 14px; font-size: 11px; color: #546e7a; }
+  .meta span { display:inline-block; background:#eef2f7; border-radius: 4px; padding: 2px 8px; margin: 2px 6px 2px 0; }
+  .roles { width:100%; border-collapse: collapse; margin: 10px 0 4px; font-size: 11.5px; }
+  .roles th, .roles td { border: 1px solid #dce3ea; padding: 6px 9px; text-align: left; vertical-align: top; }
+  .roles th { background: #14315e; color: #fff; font-weight: 600; }
+  .roles tr:nth-child(even) td { background: #f6f8fb; }
+  .diagram { width: 100%; height: auto; margin: 6px 0 4px; }
+  .seq { max-width: 720px; }
+  .t-title { font: 600 12px -apple-system, Arial; fill:#263238; }
+  .t-sub { font: 10px -apple-system, Arial; fill:#546e7a; }
+  .t-edge { font: 9.5px -apple-system, Arial; fill:#37474f; }
+  .t-actor { font: 600 11px -apple-system, Arial; fill:#fff; }
+  .t-msg { font: 9px "SF Mono", Menlo, monospace; fill:#263238; }
+  .t-note { font: italic 8px -apple-system, Arial; fill:#7e57c2; }
+  .step { margin: 0 0 16px; page-break-inside: avoid; }
+  .num { display:inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align:center;
+          background:#2d6cdf; color:#fff; border-radius: 50%; font-size: 12px; margin-right: 9px; padding: 0 4px; }
+  .io { margin: 6px 0; }
+  .io-label { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 2px; }
+  .req-label { color: #2e7d32; }
+  .res-label { color: #1565c0; }
+  pre { margin: 0; padding: 9px 11px; border-radius: 6px; font-size: 10.5px; line-height: 1.45;
+         white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+  pre.req { background: #f1f8f2; border: 1px solid #c8e6c9; }
+  pre.res { background: #f4f8fd; border: 1px solid #bbdefb; }
+  .inl { background:#f4f8fd; border:1px solid #d6e6f5; border-radius:4px; padding:1px 5px; font-size:10px; word-break:break-all; }
+  .kv { display:inline-block; color:#607d8b; font-size:10.5px; }
+  .legend { font-size: 10.5px; color:#546e7a; margin: 4px 0 0; }
+  .note-box { background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:10px 13px; font-size:11px; margin: 10px 0; }
+  ul { margin: 6px 0 10px 18px; padding: 0; }
+  li { margin: 3px 0; }
+  .pb { page-break-before: always; }
+</style></head>
+<body>
+
+<div class="cover">
+  <h1>OpenID Connect — Request &amp; Response Flow</h1>
+  <div class="sub">Authorization Code flow with PKCE · a hand-rolled Spring Boot demo</div>
+  <div class="meta">
+    <span>Generated 2026-06-09</span>
+    <span>Auth Server :9000</span>
+    <span>Client App :8080</span>
+    <span>Resource Server :9100</span>
+    <span>RS256 · PKCE S256</span>
+  </div>
+  <p style="margin-top:14px">Every request and response in this document was captured live with <code>curl</code> against the
+  three running services. Tokens and codes are real values from one end-to-end run (truncated where long).</p>
+</div>
+
+<h2>1 · Roles</h2>
+<table class="roles">
+  <tr><th>Component</th><th>Spec role</th><th>Port</th><th>Responsibility</th></tr>
+  <tr><td>authorization-server</td><td>OpenID Provider (OP)</td><td>9000</td><td>Authenticates users; issues authorization codes, ID &amp; access tokens; publishes discovery + JWKS.</td></tr>
+  <tr><td>client-app</td><td>Relying Party (RP)</td><td>8080</td><td>Drives the browser through login; performs the PKCE token exchange; validates the ID token; calls the API.</td></tr>
+  <tr><td>resource-server</td><td>Resource Server</td><td>9100</td><td>Validates the access-token JWT (signature, iss, aud, exp) and enforces scope on <code>/api/*</code>.</td></tr>
+</table>
+
+<h2>2 · Architecture</h2>
+
+<svg viewBox="0 0 820 300" xmlns="http://www.w3.org/2000/svg" class="diagram">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#37474f"/>
+    </marker>
+  </defs>
+  <!-- User/Browser -->
+  <rect x="30" y="120" width="140" height="64" rx="10" fill="#eceff1" stroke="#90a4ae"/>
+  <text x="100" y="148" text-anchor="middle" class="t-title">User-Agent</text>
+  <text x="100" y="166" text-anchor="middle" class="t-sub">Browser</text>
+
+  <!-- Client App -->
+  <rect x="240" y="120" width="160" height="64" rx="10" fill="#e3f2fd" stroke="#42a5f5"/>
+  <text x="320" y="146" text-anchor="middle" class="t-title">Client App (RP)</text>
+  <text x="320" y="164" text-anchor="middle" class="t-sub">:8080</text>
+
+  <!-- Auth Server -->
+  <rect x="470" y="30" width="180" height="64" rx="10" fill="#ede7f6" stroke="#7e57c2"/>
+  <text x="560" y="56" text-anchor="middle" class="t-title">Authorization Server</text>
+  <text x="560" y="74" text-anchor="middle" class="t-sub">OpenID Provider · :9000</text>
+
+  <!-- Resource Server -->
+  <rect x="470" y="210" width="180" height="64" rx="10" fill="#e8f5e9" stroke="#66bb6a"/>
+  <text x="560" y="236" text-anchor="middle" class="t-title">Resource Server</text>
+  <text x="560" y="254" text-anchor="middle" class="t-sub">Protected API · :9100</text>
+
+  <!-- arrows -->
+  <line x1="170" y1="152" x2="236" y2="152" stroke="#37474f" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="203" y="144" text-anchor="middle" class="t-edge">login</text>
+
+  <path d="M400,140 C440,140 440,70 466,66" fill="none" stroke="#37474f" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="455" y="104" text-anchor="middle" class="t-edge">authorize / token</text>
+
+  <path d="M400,165 C440,180 440,235 466,238" fill="none" stroke="#37474f" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="452" y="205" text-anchor="middle" class="t-edge">Bearer API call</text>
+
+  <path d="M560,210 C560,160 560,140 560,98" fill="none" stroke="#9e9e9e" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <text x="610" y="155" text-anchor="middle" class="t-edge">JWKS (verify)</text>
+</svg>
+
+<p class="legend">Solid arrows are direct HTTP calls; the dashed arrow is the resource server fetching the provider's
+public keys (JWKS) to verify tokens offline — it never sees the user's credentials.</p>
+
+<h2>3 · Sequence of the full flow</h2>
+<svg viewBox="0 0 780 800" xmlns="http://www.w3.org/2000/svg" class="diagram seq">
+<defs>
+      <marker id="s" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#37474f"/></marker>
+      <marker id="sr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1565c0"/></marker>
+    </defs>
+<rect x="20" y="20" width="140" height="30" rx="6" fill="#263238"/>
+<text x="90" y="40" text-anchor="middle" class="t-actor">Browser</text>
+<line x1="90" y1="50" x2="90" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<rect x="200" y="20" width="140" height="30" rx="6" fill="#263238"/>
+<text x="270" y="40" text-anchor="middle" class="t-actor">Client :8080</text>
+<line x1="270" y1="50" x2="270" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<rect x="410" y="20" width="140" height="30" rx="6" fill="#263238"/>
+<text x="480" y="40" text-anchor="middle" class="t-actor">Auth Server :9000</text>
+<line x1="480" y1="50" x2="480" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<rect x="620" y="20" width="140" height="30" rx="6" fill="#263238"/>
+<text x="690" y="40" text-anchor="middle" class="t-actor">Resource Srv :9100</text>
+<line x1="690" y1="50" x2="690" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<line x1="90" y1="78" x2="270" y2="78" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="180" y="72" text-anchor="middle" class="t-msg">1  GET /login</text>
+<text x="180" y="91" text-anchor="middle" class="t-note">▸ PKCE verifier+challenge, state, nonce generated</text>
+<line x1="270" y1="132" x2="90" y2="132" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="180" y="126" text-anchor="middle" class="t-msg">302 → /authorize?…code_challenge…</text>
+<line x1="90" y1="186" x2="480" y2="186" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="285" y="180" text-anchor="middle" class="t-msg">2  GET /authorize?client_id&amp;redirect_uri&amp;code_challenge&amp;scope&amp;state</text>
+<line x1="480" y1="240" x2="90" y2="240" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="285" y="234" text-anchor="middle" class="t-msg">200 login page (HTML)</text>
+<line x1="90" y1="294" x2="480" y2="294" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="285" y="288" text-anchor="middle" class="t-msg">3  POST /login (username, password, +hidden params)</text>
+<text x="285" y="307" text-anchor="middle" class="t-note">▸ credentials verified</text>
+<line x1="480" y1="348" x2="90" y2="348" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="285" y="342" text-anchor="middle" class="t-msg">302 → /callback?code&amp;state</text>
+<text x="285" y="361" text-anchor="middle" class="t-note">▸ one-time code, TTL 60s</text>
+<line x1="90" y1="402" x2="270" y2="402" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="180" y="396" text-anchor="middle" class="t-msg">4  GET /callback?code&amp;state</text>
+<text x="180" y="415" text-anchor="middle" class="t-note">▸ state checked</text>
+<line x1="270" y1="456" x2="480" y2="456" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="375" y="450" text-anchor="middle" class="t-msg">5  POST /token (code, code_verifier, client creds)</text>
+<text x="375" y="469" text-anchor="middle" class="t-note">▸ PKCE verified</text>
+<line x1="480" y1="510" x2="270" y2="510" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="375" y="504" text-anchor="middle" class="t-msg">200 {access_token, id_token}</text>
+<text x="375" y="523" text-anchor="middle" class="t-note">▸ RS256 JWTs</text>
+<path d="M270,564 h60 v22 h-60" fill="none" stroke="#6a1b9a" stroke-width="1.4" marker-end="url(#s)"/>
+<text x="336" y="566" class="t-msg">6  validate id_token (sig,iss,aud,exp,nonce)</text>
+<line x1="270" y1="618" x2="690" y2="618" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="480" y="612" text-anchor="middle" class="t-msg">7  GET /api/me  Authorization: Bearer …</text>
+<line x1="690" y1="672" x2="480" y2="672" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="585" y="666" text-anchor="middle" class="t-msg">8  fetch JWKS (cached)</text>
+<text x="585" y="685" text-anchor="middle" class="t-note">▸ verify RS256 + iss/aud/exp</text>
+<line x1="690" y1="726" x2="270" y2="726" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="480" y="720" text-anchor="middle" class="t-msg">200 protected JSON</text>
+</svg>
+<p class="legend">Dashed blue arrows are responses. The PKCE <code>code_verifier</code> stays inside the client until the
+back-channel token call (step 5), so an intercepted authorization code is useless without it.</p>
+
+<div class="pb"></div>
+<h2>4 · Step-by-step with curl</h2>
+
+    <section class="step">
+      <h3><span class="num">1</span>Discovery — find the provider&#x27;s endpoints</h3>
+      <p>The client (or resource server) bootstraps by fetching the OpenID Provider's well-known configuration. Every URL below is derived from the single <em>issuer</em> value, so there is one source of truth.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s http://localhost:9000/.well-known/openid-configuration</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;token_endpoint&quot;: &quot;http://localhost:9000/token&quot;,
+  &quot;response_types_supported&quot;: [
+    &quot;code&quot;
+  ],
+  &quot;grant_types_supported&quot;: [
+    &quot;authorization_code&quot;
+  ],
+  &quot;scopes_supported&quot;: [
+    &quot;openid&quot;,
+    &quot;profile&quot;,
+    &quot;email&quot;,
+    &quot;api.read&quot;
+  ],
+  &quot;issuer&quot;: &quot;http://localhost:9000&quot;,
+  &quot;token_endpoint_auth_methods_supported&quot;: [
+    &quot;client_secret_basic&quot;,
+    &quot;client_secret_post&quot;
+  ],
+  &quot;authorization_endpoint&quot;: &quot;http://localhost:9000/authorize&quot;,
+  &quot;claims_supported&quot;: [
+    &quot;sub&quot;,
+    &quot;iss&quot;,
+    &quot;aud&quot;,
+    &quot;exp&quot;,
+    &quot;iat&quot;,
+    &quot;nonce&quot;,
+    &quot;auth_time&quot;,
+    &quot;name&quot;,
+    &quot;preferred_username&quot;,
+    &quot;email&quot;,
+    &quot;email_verified&quot;
+  ],
+  &quot;subject_types_supported&quot;: [
+    &quot;public&quot;
+  ],
+  &quot;jwks_uri&quot;: &quot;http://localhost:9000/.well-known/jwks.json&quot;,
+  &quot;userinfo_endpoint&quot;: &quot;http://localhost:9000/userinfo&quot;,
+  &quot;id_token_signing_alg_values_supported&quot;: [
+    &quot;RS256&quot;
+  ],
+  &quot;code_challenge_methods_supported&quot;: [
+    &quot;S256&quot;,
+    &quot;plain&quot;
+  ]
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">2</span>JWKS — fetch the public signing keys</h3>
+      <p>The provider publishes its RSA public keys as a JWK Set. Clients use these to verify ID-token signatures; the resource server uses them to verify access-token signatures. The <code>kid</code> ties a token header to a key.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s http://localhost:9000/.well-known/jwks.json</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;keys&quot;: [
+    {
+      &quot;kty&quot;: &quot;RSA&quot;,
+      &quot;e&quot;: &quot;AQAB&quot;,
+      &quot;kid&quot;: &quot;305297c2-3c43-4f73-8495-ed75d365a4ea&quot;,
+      &quot;n&quot;: &quot;6lO1___6Gx4daW56YbyPLHh_Aw4Krtej0LJ8A1dZKw9B6uXao5FV_0AShVDluaO7daQgwoIv36mTNZeyQ4QrsNPZ8C5pyLnwztYdxoIv8rF004U0r4i71Zyz8IxE9pw2pwiXROncTZ10FkuzHCcdQ5gYKkIGakP7AAYgMGsliphrL4Q5z0mHsn3F6wF1zjUToifKpHVr-7TPI0gLpmJF1HTIGkdw_B49OsWrXhy4vNwn9iN0sjTGDPGHTl7wAPXgdIwe0HHQ4fB7AuvCGRnZiXFO0IncJBON03mEQzXsJn_0v1HriVmYOeMczg-iFISbpD3bs5x6OaBzsVaxtHqsjw&quot;
+    }
+  ]
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">3</span>Authorization request — redirect the user to sign in</h3>
+      <p>The client generates a PKCE pair and redirects the browser to <code>/authorize</code>. The <code>code_challenge</code> is <code>BASE64URL(SHA256(code_verifier))</code>; the verifier never leaves the client until step 5. <br><br><span class='kv'>code_verifier&nbsp;</span> <code class='inl'>B2TogbJV6k3a2HuMZdyfP3yCcaeI-fMLJihvPv7T734</code><br><span class='kv'>code_challenge</span> <code class='inl'>YYqRk8QFFnUBuVzn2nRNZjywAleTbd8sDJ9ttf_h5K8</code><br><span class='kv'>state&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <code class='inl'>d5ddfec58c45babc</code><br><span class='kv'>nonce&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <code class='inl'>b2e72d4bdb24d15e</code></p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s -G http://localhost:9000/authorize \
+  --data-urlencode &#x27;response_type=code&#x27; \
+  --data-urlencode &#x27;client_id=demo-client&#x27; \
+  --data-urlencode &#x27;redirect_uri=http://localhost:8080/callback&#x27; \
+  --data-urlencode &#x27;scope=openid profile email api.read&#x27; \
+  --data-urlencode &#x27;state=d5ddfec58c45babc&#x27; \
+  --data-urlencode &#x27;nonce=b2e72d4bdb24d15e&#x27; \
+  --data-urlencode &#x27;code_challenge=YYqRk8QFFnUBuVzn2nRNZjywAleTbd8sDJ9ttf_h5K8&#x27; \
+  --data-urlencode &#x27;code_challenge_method=S256&#x27;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res html"><code>HTTP/1.1 200 OK
+Content-Type: text/html;charset=UTF-8
+
+&lt;!-- The provider renders its login page. Every authorization-request
+     parameter is carried forward as a hidden field so it survives the
+     POST /login submission. --&gt;
+&lt;form method=&quot;post&quot; action=&quot;/login&quot;&gt; … &lt;/form&gt;</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">4</span>Login — user authenticates, provider issues a code</h3>
+      <p>The user submits credentials. The provider validates them, mints a single-use authorization code (TTL 60s) bound to the client, redirect URI, scope, nonce and PKCE challenge, then 302-redirects back to the client. The <code>state</code> is returned unchanged so the client can detect CSRF.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s -i http://localhost:9000/login \
+  -d &#x27;username=alice&#x27; -d &#x27;password=password&#x27; \
+  -d &#x27;client_id=demo-client&#x27; \
+  -d &#x27;redirect_uri=http://localhost:8080/callback&#x27; \
+  -d &#x27;scope=openid profile email api.read&#x27; \
+  -d &#x27;state=d5ddfec58c45babc&#x27; -d &#x27;nonce=b2e72d4bdb24d15e&#x27; \
+  -d &#x27;code_challenge=YYqRk8QFFnUBuVzn2nRNZjywAleTbd8sDJ9ttf_h5K8&#x27; \
+  -d &#x27;code_challenge_method=S256&#x27;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res http"><code>HTTP/1.1 302
+Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&amp;state=d5ddfec58c45babc</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">5</span>Token exchange — swap code (+verifier) for tokens</h3>
+      <p>The client calls the back-channel <code>/token</code> endpoint, authenticating with HTTP Basic (<code>client_secret_basic</code>) and presenting the original <code>code_verifier</code>. The provider re-derives the challenge from the verifier, confirms it matches what was stored in step 4, and only then returns an <strong>access token</strong> and an <strong>ID token</strong> (both RS256 JWTs).</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s -X POST http://localhost:9000/token \
+  -u &#x27;demo-client:demo-secret&#x27; \
+  -d &#x27;grant_type=authorization_code&#x27; \
+  -d &#x27;code=a2fa6a0c340b49328e513e47a78ec06f&#x27; \
+  -d &#x27;redirect_uri=http://localhost:8080/callback&#x27; \
+  -d &#x27;code_verifier=B2TogbJV6k3a2HuMZdyfP3yCcaeI-fMLJihvPv7T734&#x27;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;access_token&quot;: &quot;eyJraWQiOiIzMDUyOTdjMi0z\u20265kYwW1_78hjQ&quot;,
+  &quot;scope&quot;: &quot;openid profile email api.read&quot;,
+  &quot;token_type&quot;: &quot;Bearer&quot;,
+  &quot;id_token&quot;: &quot;eyJraWQiOiIzMDUyOTdjMi0z\u2026qIt_gxtrpZ4Q&quot;,
+  &quot;expires_in&quot;: 300
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">5a</span>Anatomy of the tokens (decoded)</h3>
+      <p>Both JWTs are signed with RS256. Decoding the Base64URL segments shows why each token exists: the <strong>ID token</strong>’s audience is the client (it proves <em>who</em> the user is, and echoes the <code>nonce</code>), while the <strong>access token</strong>’s audience is the resource server (it grants <em>what</em> the bearer may do, via <code>scope</code>).</p>
+      <div class="io">
+        <div class="io-label req-label">Access token (header + claims)</div>
+        <pre class="req"><code># header is identical for both (selects the verification key by kid)
+{
+  &quot;kid&quot;: &quot;305297c2-3c43-4f73-8495-ed75d365a4ea&quot;,
+  &quot;typ&quot;: &quot;JWT&quot;,
+  &quot;alg&quot;: &quot;RS256&quot;
+}
+
+# ACCESS TOKEN payload — aud = resource-server
+{
+  &quot;sub&quot;: &quot;user-001&quot;,
+  &quot;aud&quot;: &quot;resource-server&quot;,
+  &quot;scope&quot;: &quot;openid profile email api.read&quot;,
+  &quot;iss&quot;: &quot;http://localhost:9000&quot;,
+  &quot;exp&quot;: 1780946479,
+  &quot;iat&quot;: 1780946179,
+  &quot;jti&quot;: &quot;ddce8c4a-e283-4467-acb1-6a2092569baf&quot;,
+  &quot;client_id&quot;: &quot;demo-client&quot;
+}</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">ID token claims</div>
+        <pre class="res json"><code># ID TOKEN payload — aud = demo-client, carries identity + nonce
+{
+  &quot;sub&quot;: &quot;user-001&quot;,
+  &quot;aud&quot;: &quot;demo-client&quot;,
+  &quot;email_verified&quot;: true,
+  &quot;auth_time&quot;: 1780946179,
+  &quot;iss&quot;: &quot;http://localhost:9000&quot;,
+  &quot;name&quot;: &quot;Alice Anderson&quot;,
+  &quot;preferred_username&quot;: &quot;alice&quot;,
+  &quot;exp&quot;: 1780946479,
+  &quot;iat&quot;: 1780946179,
+  &quot;nonce&quot;: &quot;b2e72d4bdb24d15e&quot;,
+  &quot;email&quot;: &quot;alice@example.com&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">6</span>UserInfo — fetch claims with the access token</h3>
+      <p>Optionally, the client calls the provider's <code>/userinfo</code> endpoint with the access token. The returned claims are filtered by the granted scopes: <code>profile</code> adds name/username, <code>email</code> adds the email claims.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s http://localhost:9000/userinfo \
+  -H &quot;Authorization: Bearer $ACCESS_TOKEN&quot;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;sub&quot;: &quot;user-001&quot;,
+  &quot;email_verified&quot;: true,
+  &quot;name&quot;: &quot;Alice Anderson&quot;,
+  &quot;preferred_username&quot;: &quot;alice&quot;,
+  &quot;email&quot;: &quot;alice@example.com&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">7</span>Public endpoint — no token required</h3>
+      <p>The resource server exposes one unauthenticated route for contrast. The bearer-token filter is wired only to <code>/api/*</code>, so the root is reachable with no credentials.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s http://localhost:9100/</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;status&quot;: &quot;up&quot;,
+  &quot;hint&quot;: &quot;Call /api/me or /api/messages with a Bearer access token&quot;,
+  &quot;service&quot;: &quot;resource-server&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">8</span>Protected API — call /api/me with the Bearer token</h3>
+      <p>Now the client calls the protected API. The resource server's servlet filter extracts the Bearer token, verifies its RS256 signature against the cached JWKS, and enforces the expected <code>iss</code>, <code>aud</code> (<code>resource-server</code>) and <code>exp</code>. The validated claims drive the response.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s http://localhost:9100/api/me \
+  -H &quot;Authorization: Bearer $ACCESS_TOKEN&quot;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;scopes&quot;: [
+    &quot;profile&quot;,
+    &quot;openid&quot;,
+    &quot;email&quot;,
+    &quot;api.read&quot;
+  ],
+  &quot;subject&quot;: &quot;user-001&quot;,
+  &quot;clientId&quot;: &quot;demo-client&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">9</span>Scope-protected data — /api/messages (needs api.read)</h3>
+      <p>This endpoint additionally enforces <em>fine-grained authorization</em>: it requires the <code>api.read</code> scope, which our access token carries.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s http://localhost:9100/api/messages \
+  -H &quot;Authorization: Bearer $ACCESS_TOKEN&quot;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;servedAt&quot;: &quot;2026-06-08T19:16:45.480364Z&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;from&quot;: &quot;system&quot;,
+      &quot;text&quot;: &quot;Welcome, your token is valid!&quot;
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;from&quot;: &quot;system&quot;,
+      &quot;text&quot;: &quot;This data is protected by an access token.&quot;
+    }
+  ],
+  &quot;owner&quot;: &quot;user-001&quot;
+}</code></pre>
+      </div>
+    </section>
+
+<h2 class="pb">5 · Error responses</h2>
+<p>The same endpoints, exercised with a missing or under-privileged token. These show how the resource server
+distinguishes <em>authentication</em> (401) from <em>authorization</em> (403).</p>
+
+    <section class="step">
+      <h3><span class="num">E1</span>401 Unauthorized — no Bearer token</h3>
+      <p>Calling a protected route without a token. Per RFC 6750 the server replies with a <code>WWW-Authenticate: Bearer</code> challenge header.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s -i http://localhost:9100/api/me</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res http"><code>HTTP/1.1 401
+WWW-Authenticate: Bearer error=&quot;missing_token&quot;,
+  error_description=&quot;A Bearer access token is required&quot;
+
+{
+  &quot;error&quot;: &quot;missing_token&quot;,
+  &quot;error_description&quot;: &quot;A Bearer access token is required&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">E2</span>403 Forbidden — token valid but scope insufficient</h3>
+      <p>Here a second user (<code>bob</code>) logged in requesting only <code>openid profile</code> — no <code>api.read</code>. The token is perfectly valid and <code>/api/me</code> would succeed, but <code>/api/messages</code> rejects it with <code>insufficient_scope</code>.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code># token obtained with scope=&#x27;openid profile&#x27; (no api.read)
+curl -s -i http://localhost:9100/api/messages \
+  -H &quot;Authorization: Bearer $NARROW_TOKEN&quot;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res http"><code>HTTP/1.1 403
+
+{
+  &quot;error_description&quot;: &quot;This endpoint requires the &#x27;api.read&#x27; scope&quot;,
+  &quot;required_scope&quot;: &quot;api.read&quot;,
+  &quot;error&quot;: &quot;insufficient_scope&quot;
+}</code></pre>
+      </div>
+    </section>
+
+<h2>6 · Why each check matters</h2>
+<ul>
+  <li><strong>PKCE (S256)</strong> — binds the authorization code to the client instance that started the flow. A
+      stolen code cannot be redeemed without the matching <code>code_verifier</code>.</li>
+  <li><strong>state</strong> — returned unchanged on the <code>/callback</code> redirect so the client can reject
+      cross-site request forgery.</li>
+  <li><strong>nonce</strong> — embedded in the ID token and checked by the client to prevent token replay.</li>
+  <li><strong>Single-use code, 60s TTL</strong> — the code is consumed atomically at the token endpoint, so replay
+      fails even within the window.</li>
+  <li><strong>aud separation</strong> — the ID token is for the client, the access token is for the API; neither is
+      accepted in the other's place.</li>
+  <li><strong>Signature + iss/aud/exp on every API call</strong> — the resource server trusts no token it cannot
+      verify against the provider's JWKS, with no shared secret and no call back to the OP per request.</li>
+</ul>
+
+<div class="note-box"><strong>Demo only.</strong> Secrets are hard-coded, users and keys live in memory, transport is
+plain HTTP, and there is no refresh-token or consent handling. The point is to make every protocol step visible.</div>
+
+</body></html>

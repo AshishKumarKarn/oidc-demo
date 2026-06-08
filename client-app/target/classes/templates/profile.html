@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<!--
+  Signed-in landing page. Displays:
+   - the validated identity claims from the ID token,
+   - short previews of the access/ID tokens,
+   - the live responses from the resource server's /api/me and /api/messages endpoints.
+-->
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Profile &middot; OIDC Demo Client</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f5f7; padding: 40px; }
+        .wrap { max-width: 720px; margin: 0 auto; }
+        .card { background: #fff; padding: 24px 28px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,.08); margin-bottom: 20px; }
+        h1 { font-size: 22px; margin: 0 0 16px; }
+        h2 { font-size: 16px; margin: 0 0 12px; color: #333; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
+        td.k { color: #888; width: 180px; }
+        pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
+        .token { font-family: monospace; font-size: 12px; color: #555; word-break: break-all; background: #eef2ff; padding: 6px 8px; border-radius: 6px; }
+        .status { font-weight: 600; }
+        .ok { color: #15803d; } .bad { color: #b91c1c; }
+        a { color: #2d6cdf; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Signed in &nbsp;<a href="/logout" style="font-size:14px;">(log out)</a></h1>
+
+    <div class="card">
+        <h2>Identity claims (from the validated ID token)</h2>
+        <table>
+            <tr th:each="entry : ${claims}">
+                <td class="k" th:text="${entry.key}">claim</td>
+                <td th:text="${entry.value}">value</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Tokens (previews)</h2>
+        <p>Access token:</p>
+        <div class="token" th:text="${accessTokenPreview}">eyJ...</div>
+        <p style="margin-top:12px;">ID token:</p>
+        <div class="token" th:text="${idTokenPreview}">eyJ...</div>
+    </div>
+
+    <div class="card">
+        <h2>Resource server &mdash; <code>GET /api/me</code></h2>
+        <p>HTTP status:
+            <span class="status" th:classappend="${meStatus == 200} ? 'ok' : 'bad'" th:text="${meStatus}">200</span>
+        </p>
+        <pre th:text="${meBody}">{}</pre>
+    </div>
+
+    <div class="card">
+        <h2>Resource server &mdash; <code>GET /api/messages</code> (requires <code>api.read</code> scope)</h2>
+        <p>HTTP status:
+            <span class="status" th:classappend="${messagesStatus == 200} ? 'ok' : 'bad'" th:text="${messagesStatus}">200</span>
+        </p>
+        <pre th:text="${messagesBody}">{}</pre>
+    </div>
+</div>
+</body>
+</html>

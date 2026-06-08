@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn -q -o compile)",
+      "Bash(mvn -q compile)",
+      "Bash(lsof -iTCP -sTCP:LISTEN -n -P)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:9000/.well-known/openid-configuration)",
+      "Bash(echo \"auth  /.well-known/openid-configuration: $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:9000/.well-known/openid-configuration\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:9100/)",
+      "Bash(echo \"res   /:                                $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:9100/\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)",
+      "Bash(curl -s http://localhost:9000/userinfo -H 'Authorization: Bearer __CMDSUB_OUTPUT__')"
+    ]
+  }
+}

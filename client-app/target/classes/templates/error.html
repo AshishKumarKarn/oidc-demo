@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!-- Shown when the authorization response or token/ID-token validation fails. -->
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Login error &middot; OIDC Demo Client</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f5f7; display: flex; justify-content: center; padding-top: 60px; }
+        .card { background: #fff; padding: 32px 40px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,.08); width: 420px; }
+        h1 { font-size: 20px; color: #b91c1c; margin: 0 0 12px; }
+        .desc { color: #555; }
+        a.btn { display: inline-block; margin-top: 20px; padding: 9px 16px; background: #2d6cdf; color: #fff; text-decoration: none; border-radius: 6px; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Login failed</h1>
+    <p><strong>Error:</strong> <span th:text="${error}">error</span></p>
+    <p class="desc" th:if="${errorDescription}" th:utext="${errorDescription}">description</p>
+    <a class="btn" href="/">Back to home</a>
+</div>
+</body>
+</html>

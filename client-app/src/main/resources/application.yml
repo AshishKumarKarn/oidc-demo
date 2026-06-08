@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: client-app
+  thymeleaf:
+    cache: false
+
+# Relying-party configuration consumed by ClientProperties.
+oidc-client:
+  # The OP we trust. Its discovery document is fetched from issuer + /.well-known/openid-configuration.
+  issuer: http://localhost:9000
+  # Credentials issued to us when we registered with the OP (see auth server's ClientRegistry).
+  client-id: demo-client
+  client-secret: demo-secret
+  # Must exactly match one of the redirect URIs registered for this client at the OP.
+  redirect-uri: http://localhost:8080/callback
+  # Scopes we request. `openid` is mandatory for OIDC; `api.read` lets us call the resource server.
+  scope: openid profile email api.read
+  # Base URL of the protected API we call with the access token.
+  resource-server-url: http://localhost:9100
+
+logging:
+  level:
+    com.example.oidc: DEBUG

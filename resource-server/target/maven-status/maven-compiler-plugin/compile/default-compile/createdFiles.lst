@@ -1,0 +1,9 @@
+com/example/oidc/resourceserver/security/BearerTokenAuthenticationFilter.class
+com/example/oidc/resourceserver/security/AccessTokenValidator$TokenValidationException.class
+com/example/oidc/resourceserver/security/AuthenticatedToken.class
+com/example/oidc/resourceserver/web/PublicController.class
+com/example/oidc/resourceserver/ResourceServerApplication.class
+com/example/oidc/resourceserver/security/AccessTokenValidator.class
+com/example/oidc/resourceserver/config/ResourceServerProperties.class
+com/example/oidc/resourceserver/web/ApiController.class
+com/example/oidc/resourceserver/config/FilterConfig.class

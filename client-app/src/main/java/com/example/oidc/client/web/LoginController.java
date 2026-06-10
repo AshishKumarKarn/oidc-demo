@@ -41,6 +41,7 @@ public class LoginController {
     private static final String SESSION_CLAIMS = "oidc_claims";
     private static final String SESSION_ACCESS_TOKEN = "oidc_access_token";
     private static final String SESSION_ID_TOKEN = "oidc_id_token";
+    private static final String SESSION_REFRESH_TOKEN = "oidc_refresh_token";
 
     private final ClientProperties properties;
     private final OidcDiscoveryService discoveryService;
@@ -151,10 +152,11 @@ public class LoginController {
             session.removeAttribute(SESSION_NONCE);
             session.removeAttribute(SESSION_CODE_VERIFIER);
 
-            // Persist a minimal "logged-in" session.
+            // Persist a minimal "logged-in" session, including the refresh token for silent renewal.
             session.setAttribute(SESSION_CLAIMS, toDisplayClaims(claims));
             session.setAttribute(SESSION_ACCESS_TOKEN, tokens.accessToken());
             session.setAttribute(SESSION_ID_TOKEN, tokens.idToken());
+            session.setAttribute(SESSION_REFRESH_TOKEN, tokens.refreshToken());
 
             log.info("User {} logged in", claims.getSubject());
             return new RedirectView("/profile");
@@ -168,6 +170,10 @@ public class LoginController {
     /**
      * Step 3 &mdash; the signed-in landing page. Shows the identity claims from the ID token and the
      * live results of calling the resource server's API with the access token.
+     *
+     * <p>If a call comes back {@code 401} (the access token expired), we transparently use the stored
+     * refresh token to obtain a fresh access token and retry &mdash; no re-login. If the refresh itself
+     * fails (the refresh token expired or was already rotated), we fall back to the full login flow.
      */
     @GetMapping("/profile")
     @SuppressWarnings("unchecked")
@@ -179,13 +185,42 @@ public class LoginController {
             return new RedirectView("/login");
         }
 
-        // Call both API endpoints to show the access token in action.
+        // Call the API; if the token has expired, silently refresh once and retry.
         ResourceServerClient.ApiResult me = resourceServerClient.get("/api/me", accessToken);
+        boolean tokenRefreshed = false;
+        if (me.status() == 401) {
+            String refreshToken = (String) session.getAttribute(SESSION_REFRESH_TOKEN);
+            if (refreshToken != null) {
+                try {
+                    TokenClient.TokenResponse renewed = tokenClient.refresh(refreshToken);
+                    accessToken = renewed.accessToken();
+                    session.setAttribute(SESSION_ACCESS_TOKEN, accessToken);
+                    if (renewed.idToken() != null) {
+                        session.setAttribute(SESSION_ID_TOKEN, renewed.idToken());
+                    }
+                    // The OP rotates refresh tokens, so replace the stored one with the new value.
+                    if (renewed.refreshToken() != null) {
+                        session.setAttribute(SESSION_REFRESH_TOKEN, renewed.refreshToken());
+                    }
+                    tokenRefreshed = true;
+                    log.info("Access token expired; refreshed silently for {}", claims.get("sub"));
+                    me = resourceServerClient.get("/api/me", accessToken); // retry with the new token
+                } catch (TokenClient.TokenExchangeException e) {
+                    // Refresh token is gone too -> the user must authenticate again.
+                    log.info("Refresh failed ({}); forcing re-login", e.getMessage());
+                    session.invalidate();
+                    return new RedirectView("/login");
+                }
+            }
+        }
+
         ResourceServerClient.ApiResult messages = resourceServerClient.get("/api/messages", accessToken);
 
         model.addAttribute("claims", claims);
         model.addAttribute("accessTokenPreview", preview(accessToken));
         model.addAttribute("idTokenPreview", preview((String) session.getAttribute(SESSION_ID_TOKEN)));
+        model.addAttribute("refreshTokenPreview", preview((String) session.getAttribute(SESSION_REFRESH_TOKEN)));
+        model.addAttribute("tokenRefreshed", tokenRefreshed);
         model.addAttribute("meStatus", me.status());
         model.addAttribute("meBody", me.body());
         model.addAttribute("messagesStatus", messages.status());

@@ -44,7 +44,7 @@ public class DiscoveryController {
                 Map.entry("userinfo_endpoint", issuer + "/userinfo"),
                 Map.entry("jwks_uri", issuer + "/.well-known/jwks.json"),
                 Map.entry("response_types_supported", List.of("code")),
-                Map.entry("grant_types_supported", List.of("authorization_code")),
+                Map.entry("grant_types_supported", List.of("authorization_code", "refresh_token")),
                 Map.entry("subject_types_supported", List.of("public")),
                 Map.entry("id_token_signing_alg_values_supported", List.of("RS256")),
                 Map.entry("scopes_supported", List.of("openid", "profile", "email", "api.read")),

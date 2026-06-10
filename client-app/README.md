@@ -37,10 +37,20 @@ building the request, PKCE, the token exchange, ID-token validation — is writt
    tokens.
 3. **ID-token validation** — `IdTokenValidator` checks the RS256 signature (using keys discovered via
    `OidcDiscoveryService` → JWKS), and the `iss`, `aud`, `exp`, and `nonce` claims before trusting it.
-4. **Session** — identity claims and the access token are stored in the session; the user lands on
-   `/profile`.
+4. **Session** — identity claims plus the access, ID, and **refresh** tokens are stored in the session;
+   the user lands on `/profile`.
 5. **API calls** — `ResourceServerClient` calls the resource server with
    `Authorization: Bearer <access_token>`.
+
+### Silent token refresh
+
+When the access token expires, a resource-server call returns **401**. `/profile` handles this
+transparently: it calls `TokenClient.refresh(refreshToken)` to obtain a fresh access token (the OP
+also returns a **rotated** refresh token, which replaces the stored one), then retries the API call —
+**no re-login**. The profile page shows a "silently refreshed" banner when this happens. If the
+refresh token itself is invalid/expired, the client clears the session and restarts the full login
+flow. (To watch it happen quickly, set `oidc.access-token-ttl-seconds: 30` on the authorization
+server and reload `/profile` after 30s.)
 
 ---
 
@@ -52,7 +62,7 @@ client/
 ├── service/
 │   ├── PkceService.java              # code_verifier / code_challenge (S256)
 │   ├── OidcDiscoveryService.java     # fetches the OP discovery doc + JWKS
-│   ├── TokenClient.java              # POSTs the code exchange to /token
+│   ├── TokenClient.java              # POSTs the code exchange + refresh_token grant to /token
 │   ├── IdTokenValidator.java         # validates the ID token (sig, iss, aud, exp, nonce)
 │   └── ResourceServerClient.java     # calls the protected API with the access token
 ├── config/ClientProperties.java      # binds the `oidc-client.*` settings

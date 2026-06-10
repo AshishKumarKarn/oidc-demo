@@ -12,7 +12,8 @@
       "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)",
       "Bash(curl -s http://localhost:9000/userinfo -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(command -v python3)",
-      "Bash(cd *)"
+      "Bash(cd *)",
+      "Bash(lsof -nP -iTCP:9200 -iTCP:8090 -sTCP:LISTEN)"
     ]
   }
 }

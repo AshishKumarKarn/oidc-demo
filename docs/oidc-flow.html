@@ -51,11 +51,12 @@
   <h1>OpenID Connect — Request &amp; Response Flow</h1>
   <div class="sub">Authorization Code flow with PKCE · a hand-rolled Spring Boot demo</div>
   <div class="meta">
-    <span>Generated 2026-06-09</span>
+    <span>Generated 2026-06-10</span>
     <span>Auth Server :9000</span>
     <span>Client App :8080</span>
     <span>Resource Server :9100</span>
     <span>RS256 · PKCE S256</span>
+    <span>Refresh-token rotation</span>
   </div>
   <p style="margin-top:14px">Every request and response in this document was captured live with <code>curl</code> against the
   three running services. Tokens and codes are real values from one end-to-end run (truncated where long).</p>
@@ -115,23 +116,23 @@
 public keys (JWKS) to verify tokens offline — it never sees the user's credentials.</p>
 
 <h2>3 · Sequence of the full flow</h2>
-<svg viewBox="0 0 780 800" xmlns="http://www.w3.org/2000/svg" class="diagram seq">
+<svg viewBox="0 0 780 920" xmlns="http://www.w3.org/2000/svg" class="diagram seq">
 <defs>
       <marker id="s" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#37474f"/></marker>
       <marker id="sr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1565c0"/></marker>
     </defs>
 <rect x="20" y="20" width="140" height="30" rx="6" fill="#263238"/>
 <text x="90" y="40" text-anchor="middle" class="t-actor">Browser</text>
-<line x1="90" y1="50" x2="90" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<line x1="90" y1="50" x2="90" y2="880" stroke="#b0bec5" stroke-width="1"/>
 <rect x="200" y="20" width="140" height="30" rx="6" fill="#263238"/>
 <text x="270" y="40" text-anchor="middle" class="t-actor">Client :8080</text>
-<line x1="270" y1="50" x2="270" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<line x1="270" y1="50" x2="270" y2="880" stroke="#b0bec5" stroke-width="1"/>
 <rect x="410" y="20" width="140" height="30" rx="6" fill="#263238"/>
 <text x="480" y="40" text-anchor="middle" class="t-actor">Auth Server :9000</text>
-<line x1="480" y1="50" x2="480" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<line x1="480" y1="50" x2="480" y2="880" stroke="#b0bec5" stroke-width="1"/>
 <rect x="620" y="20" width="140" height="30" rx="6" fill="#263238"/>
 <text x="690" y="40" text-anchor="middle" class="t-actor">Resource Srv :9100</text>
-<line x1="690" y1="50" x2="690" y2="760" stroke="#b0bec5" stroke-width="1"/>
+<line x1="690" y1="50" x2="690" y2="880" stroke="#b0bec5" stroke-width="1"/>
 <line x1="90" y1="78" x2="270" y2="78" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
 <text x="180" y="72" text-anchor="middle" class="t-msg">1  GET /login</text>
 <text x="180" y="91" text-anchor="middle" class="t-note">▸ PKCE verifier+challenge, state, nonce generated</text>
@@ -165,6 +166,14 @@ public keys (JWKS) to verify tokens offline — it never sees the user's credent
 <text x="585" y="685" text-anchor="middle" class="t-note">▸ verify RS256 + iss/aud/exp</text>
 <line x1="690" y1="726" x2="270" y2="726" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
 <text x="480" y="720" text-anchor="middle" class="t-msg">200 protected JSON</text>
+<line x1="690" y1="780" x2="270" y2="780" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="480" y="774" text-anchor="middle" class="t-msg">…later: 401 (access token expired)…</text>
+<line x1="270" y1="834" x2="480" y2="834" stroke="#37474f" stroke-width="1.5" marker-end="url(#s)"/>
+<text x="375" y="828" text-anchor="middle" class="t-msg">9  POST /token (grant_type=refresh_token)</text>
+<text x="375" y="847" text-anchor="middle" class="t-note">▸ no user interaction</text>
+<line x1="480" y1="888" x2="270" y2="888" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#sr)"/>
+<text x="375" y="882" text-anchor="middle" class="t-msg">200 new access + rotated refresh</text>
+<text x="375" y="901" text-anchor="middle" class="t-note">▸ old refresh token now invalid</text>
 </svg>
 <p class="legend">Dashed blue arrows are responses. The PKCE <code>code_verifier</code> stays inside the client until the
 back-channel token call (step 5), so an intercepted authorization code is useless without it.</p>
@@ -182,25 +191,9 @@ back-channel token call (step 5), so an intercepted authorization code is useles
       <div class="io">
         <div class="io-label res-label">Response</div>
         <pre class="res json"><code>{
-  &quot;token_endpoint&quot;: &quot;http://localhost:9000/token&quot;,
-  &quot;response_types_supported&quot;: [
-    &quot;code&quot;
+  &quot;subject_types_supported&quot;: [
+    &quot;public&quot;
   ],
-  &quot;grant_types_supported&quot;: [
-    &quot;authorization_code&quot;
-  ],
-  &quot;scopes_supported&quot;: [
-    &quot;openid&quot;,
-    &quot;profile&quot;,
-    &quot;email&quot;,
-    &quot;api.read&quot;
-  ],
-  &quot;issuer&quot;: &quot;http://localhost:9000&quot;,
-  &quot;token_endpoint_auth_methods_supported&quot;: [
-    &quot;client_secret_basic&quot;,
-    &quot;client_secret_post&quot;
-  ],
-  &quot;authorization_endpoint&quot;: &quot;http://localhost:9000/authorize&quot;,
   &quot;claims_supported&quot;: [
     &quot;sub&quot;,
     &quot;iss&quot;,
@@ -214,18 +207,35 @@ back-channel token call (step 5), so an intercepted authorization code is useles
     &quot;email&quot;,
     &quot;email_verified&quot;
   ],
-  &quot;subject_types_supported&quot;: [
-    &quot;public&quot;
+  &quot;authorization_endpoint&quot;: &quot;http://localhost:9000/authorize&quot;,
+  &quot;token_endpoint_auth_methods_supported&quot;: [
+    &quot;client_secret_basic&quot;,
+    &quot;client_secret_post&quot;
   ],
-  &quot;jwks_uri&quot;: &quot;http://localhost:9000/.well-known/jwks.json&quot;,
-  &quot;userinfo_endpoint&quot;: &quot;http://localhost:9000/userinfo&quot;,
-  &quot;id_token_signing_alg_values_supported&quot;: [
-    &quot;RS256&quot;
+  &quot;issuer&quot;: &quot;http://localhost:9000&quot;,
+  &quot;scopes_supported&quot;: [
+    &quot;openid&quot;,
+    &quot;profile&quot;,
+    &quot;email&quot;,
+    &quot;api.read&quot;
   ],
+  &quot;grant_types_supported&quot;: [
+    &quot;authorization_code&quot;,
+    &quot;refresh_token&quot;
+  ],
+  &quot;response_types_supported&quot;: [
+    &quot;code&quot;
+  ],
+  &quot;token_endpoint&quot;: &quot;http://localhost:9000/token&quot;,
   &quot;code_challenge_methods_supported&quot;: [
     &quot;S256&quot;,
     &quot;plain&quot;
-  ]
+  ],
+  &quot;id_token_signing_alg_values_supported&quot;: [
+    &quot;RS256&quot;
+  ],
+  &quot;userinfo_endpoint&quot;: &quot;http://localhost:9000/userinfo&quot;,
+  &quot;jwks_uri&quot;: &quot;http://localhost:9000/.well-known/jwks.json&quot;
 }</code></pre>
       </div>
     </section>
@@ -243,8 +253,8 @@ back-channel token call (step 5), so an intercepted authorization code is useles
     {
       &quot;kty&quot;: &quot;RSA&quot;,
       &quot;e&quot;: &quot;AQAB&quot;,
-      &quot;kid&quot;: &quot;305297c2-3c43-4f73-8495-ed75d365a4ea&quot;,
-      &quot;n&quot;: &quot;6lO1___6Gx4daW56YbyPLHh_Aw4Krtej0LJ8A1dZKw9B6uXao5FV_0AShVDluaO7daQgwoIv36mTNZeyQ4QrsNPZ8C5pyLnwztYdxoIv8rF004U0r4i71Zyz8IxE9pw2pwiXROncTZ10FkuzHCcdQ5gYKkIGakP7AAYgMGsliphrL4Q5z0mHsn3F6wF1zjUToifKpHVr-7TPI0gLpmJF1HTIGkdw_B49OsWrXhy4vNwn9iN0sjTGDPGHTl7wAPXgdIwe0HHQ4fB7AuvCGRnZiXFO0IncJBON03mEQzXsJn_0v1HriVmYOeMczg-iFISbpD3bs5x6OaBzsVaxtHqsjw&quot;
+      &quot;kid&quot;: &quot;294b8ecc-c6ee-4c42-843d-966d5faebb1f&quot;,
+      &quot;n&quot;: &quot;uws-I01fV0b03kWATy2ANZ1vblVRedpLIFuuio92Bwc8wcdgqS0-4CF2c6d8GNZY-3hnTJwyVJUo6_fh-01dzpHD9uRkIcnWWuX5wSsWzDDq3eO0yph1V18ubVzxza3HFNM-cucAF6nTFFb371lOUjhsWSlOLw7GcDm0sUc8O9giBZ9kLzyKXR37Vjcln58VzwpK_5Vm7ZyvUpFD0IQykHEKoOkAf2nsUpY9gRr7fGyiZk4ezPDqsMKWJG63gb34N0bxbsLkRlLmyMs6QISbB7FW5HL5YTa7VjDu6_SRL6R4fMv3rpmi5veVk4YmTWhBKOF5l1Xb69Xv-EeNZiUn6Q&quot;
     }
   ]
 }</code></pre>
@@ -252,7 +262,7 @@ back-channel token call (step 5), so an intercepted authorization code is useles
     </section>
     <section class="step">
       <h3><span class="num">3</span>Authorization request — redirect the user to sign in</h3>
-      <p>The client generates a PKCE pair and redirects the browser to <code>/authorize</code>. The <code>code_challenge</code> is <code>BASE64URL(SHA256(code_verifier))</code>; the verifier never leaves the client until step 5. <br><br><span class='kv'>code_verifier&nbsp;</span> <code class='inl'>B2TogbJV6k3a2HuMZdyfP3yCcaeI-fMLJihvPv7T734</code><br><span class='kv'>code_challenge</span> <code class='inl'>YYqRk8QFFnUBuVzn2nRNZjywAleTbd8sDJ9ttf_h5K8</code><br><span class='kv'>state&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <code class='inl'>d5ddfec58c45babc</code><br><span class='kv'>nonce&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <code class='inl'>b2e72d4bdb24d15e</code></p>
+      <p>The client generates a PKCE pair and redirects the browser to <code>/authorize</code>. The <code>code_challenge</code> is <code>BASE64URL(SHA256(code_verifier))</code>; the verifier never leaves the client until step 5. <br><br><span class='kv'>code_verifier&nbsp;</span> <code class='inl'>xkQEVovM1bgmzSqGEek5f0SX43cyKdGnRnwisfZdBFI</code><br><span class='kv'>code_challenge</span> <code class='inl'>Bf0cALueanglhTUHsxqhris0snpHium45fFNo1vqe6E</code><br><span class='kv'>state&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <code class='inl'>d7721ddc4e1503a4</code><br><span class='kv'>nonce&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <code class='inl'>9efb75cd979966c0</code></p>
       <div class="io">
         <div class="io-label req-label">Request</div>
         <pre class="req"><code>curl -s -G http://localhost:9000/authorize \
@@ -260,9 +270,9 @@ back-channel token call (step 5), so an intercepted authorization code is useles
   --data-urlencode &#x27;client_id=demo-client&#x27; \
   --data-urlencode &#x27;redirect_uri=http://localhost:8080/callback&#x27; \
   --data-urlencode &#x27;scope=openid profile email api.read&#x27; \
-  --data-urlencode &#x27;state=d5ddfec58c45babc&#x27; \
-  --data-urlencode &#x27;nonce=b2e72d4bdb24d15e&#x27; \
-  --data-urlencode &#x27;code_challenge=YYqRk8QFFnUBuVzn2nRNZjywAleTbd8sDJ9ttf_h5K8&#x27; \
+  --data-urlencode &#x27;state=d7721ddc4e1503a4&#x27; \
+  --data-urlencode &#x27;nonce=9efb75cd979966c0&#x27; \
+  --data-urlencode &#x27;code_challenge=Bf0cALueanglhTUHsxqhris0snpHium45fFNo1vqe6E&#x27; \
   --data-urlencode &#x27;code_challenge_method=S256&#x27;</code></pre>
       </div>
       <div class="io">
@@ -286,36 +296,37 @@ Content-Type: text/html;charset=UTF-8
   -d &#x27;client_id=demo-client&#x27; \
   -d &#x27;redirect_uri=http://localhost:8080/callback&#x27; \
   -d &#x27;scope=openid profile email api.read&#x27; \
-  -d &#x27;state=d5ddfec58c45babc&#x27; -d &#x27;nonce=b2e72d4bdb24d15e&#x27; \
-  -d &#x27;code_challenge=YYqRk8QFFnUBuVzn2nRNZjywAleTbd8sDJ9ttf_h5K8&#x27; \
+  -d &#x27;state=d7721ddc4e1503a4&#x27; -d &#x27;nonce=9efb75cd979966c0&#x27; \
+  -d &#x27;code_challenge=Bf0cALueanglhTUHsxqhris0snpHium45fFNo1vqe6E&#x27; \
   -d &#x27;code_challenge_method=S256&#x27;</code></pre>
       </div>
       <div class="io">
         <div class="io-label res-label">Response</div>
         <pre class="res http"><code>HTTP/1.1 302
-Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&amp;state=d5ddfec58c45babc</code></pre>
+Location: http://localhost:8080/callback?code=285743145bdb490faa64abeb10429fbd&amp;state=d7721ddc4e1503a4</code></pre>
       </div>
     </section>
     <section class="step">
       <h3><span class="num">5</span>Token exchange — swap code (+verifier) for tokens</h3>
-      <p>The client calls the back-channel <code>/token</code> endpoint, authenticating with HTTP Basic (<code>client_secret_basic</code>) and presenting the original <code>code_verifier</code>. The provider re-derives the challenge from the verifier, confirms it matches what was stored in step 4, and only then returns an <strong>access token</strong> and an <strong>ID token</strong> (both RS256 JWTs).</p>
+      <p>The client calls the back-channel <code>/token</code> endpoint, authenticating with HTTP Basic (<code>client_secret_basic</code>) and presenting the original <code>code_verifier</code>. The provider re-derives the challenge from the verifier, confirms it matches what was stored in step 4, and only then returns an <strong>access token</strong> + <strong>ID token</strong> (RS256 JWTs) and a <strong>refresh token</strong> (opaque, for later renewal).</p>
       <div class="io">
         <div class="io-label req-label">Request</div>
         <pre class="req"><code>curl -s -X POST http://localhost:9000/token \
   -u &#x27;demo-client:demo-secret&#x27; \
   -d &#x27;grant_type=authorization_code&#x27; \
-  -d &#x27;code=a2fa6a0c340b49328e513e47a78ec06f&#x27; \
+  -d &#x27;code=285743145bdb490faa64abeb10429fbd&#x27; \
   -d &#x27;redirect_uri=http://localhost:8080/callback&#x27; \
-  -d &#x27;code_verifier=B2TogbJV6k3a2HuMZdyfP3yCcaeI-fMLJihvPv7T734&#x27;</code></pre>
+  -d &#x27;code_verifier=xkQEVovM1bgmzSqGEek5f0SX43cyKdGnRnwisfZdBFI&#x27;</code></pre>
       </div>
       <div class="io">
         <div class="io-label res-label">Response</div>
         <pre class="res json"><code>{
-  &quot;access_token&quot;: &quot;eyJraWQiOiIzMDUyOTdjMi0z\u20265kYwW1_78hjQ&quot;,
-  &quot;scope&quot;: &quot;openid profile email api.read&quot;,
+  &quot;access_token&quot;: &quot;eyJraWQiOiIyOTRiOGVjYy1j\u2026U3bVJgDqZd1Q&quot;,
   &quot;token_type&quot;: &quot;Bearer&quot;,
-  &quot;id_token&quot;: &quot;eyJraWQiOiIzMDUyOTdjMi0z\u2026qIt_gxtrpZ4Q&quot;,
-  &quot;expires_in&quot;: 300
+  &quot;expires_in&quot;: 300,
+  &quot;id_token&quot;: &quot;eyJraWQiOiIyOTRiOGVjYy1j\u2026B0L1a54MmEcg&quot;,
+  &quot;refresh_token&quot;: &quot;h4CUv3qU3jxvl_Fsw_0RMVAzQAwkIXuSuFP8WAOqjaM&quot;,
+  &quot;scope&quot;: &quot;openid profile email api.read&quot;
 }</code></pre>
       </div>
     </section>
@@ -326,7 +337,7 @@ Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&a
         <div class="io-label req-label">Access token (header + claims)</div>
         <pre class="req"><code># header is identical for both (selects the verification key by kid)
 {
-  &quot;kid&quot;: &quot;305297c2-3c43-4f73-8495-ed75d365a4ea&quot;,
+  &quot;kid&quot;: &quot;294b8ecc-c6ee-4c42-843d-966d5faebb1f&quot;,
   &quot;typ&quot;: &quot;JWT&quot;,
   &quot;alg&quot;: &quot;RS256&quot;
 }
@@ -337,9 +348,9 @@ Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&a
   &quot;aud&quot;: &quot;resource-server&quot;,
   &quot;scope&quot;: &quot;openid profile email api.read&quot;,
   &quot;iss&quot;: &quot;http://localhost:9000&quot;,
-  &quot;exp&quot;: 1780946479,
-  &quot;iat&quot;: 1780946179,
-  &quot;jti&quot;: &quot;ddce8c4a-e283-4467-acb1-6a2092569baf&quot;,
+  &quot;exp&quot;: 1781031272,
+  &quot;iat&quot;: 1781030972,
+  &quot;jti&quot;: &quot;2b964d54-46ae-4a46-b471-7e4446aa4f89&quot;,
   &quot;client_id&quot;: &quot;demo-client&quot;
 }</code></pre>
       </div>
@@ -350,13 +361,13 @@ Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&a
   &quot;sub&quot;: &quot;user-001&quot;,
   &quot;aud&quot;: &quot;demo-client&quot;,
   &quot;email_verified&quot;: true,
-  &quot;auth_time&quot;: 1780946179,
+  &quot;auth_time&quot;: 1781030972,
   &quot;iss&quot;: &quot;http://localhost:9000&quot;,
   &quot;name&quot;: &quot;Alice Anderson&quot;,
   &quot;preferred_username&quot;: &quot;alice&quot;,
-  &quot;exp&quot;: 1780946479,
-  &quot;iat&quot;: 1780946179,
-  &quot;nonce&quot;: &quot;b2e72d4bdb24d15e&quot;,
+  &quot;exp&quot;: 1781031272,
+  &quot;iat&quot;: 1781030972,
+  &quot;nonce&quot;: &quot;9efb75cd979966c0&quot;,
   &quot;email&quot;: &quot;alice@example.com&quot;
 }</code></pre>
       </div>
@@ -390,9 +401,9 @@ Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&a
       <div class="io">
         <div class="io-label res-label">Response</div>
         <pre class="res json"><code>{
-  &quot;status&quot;: &quot;up&quot;,
+  &quot;service&quot;: &quot;resource-server&quot;,
   &quot;hint&quot;: &quot;Call /api/me or /api/messages with a Bearer access token&quot;,
-  &quot;service&quot;: &quot;resource-server&quot;
+  &quot;status&quot;: &quot;up&quot;
 }</code></pre>
       </div>
     </section>
@@ -407,14 +418,14 @@ Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&a
       <div class="io">
         <div class="io-label res-label">Response</div>
         <pre class="res json"><code>{
-  &quot;scopes&quot;: [
-    &quot;profile&quot;,
-    &quot;openid&quot;,
-    &quot;email&quot;,
-    &quot;api.read&quot;
-  ],
+  &quot;clientId&quot;: &quot;demo-client&quot;,
   &quot;subject&quot;: &quot;user-001&quot;,
-  &quot;clientId&quot;: &quot;demo-client&quot;
+  &quot;scopes&quot;: [
+    &quot;email&quot;,
+    &quot;openid&quot;,
+    &quot;profile&quot;,
+    &quot;api.read&quot;
+  ]
 }</code></pre>
       </div>
     </section>
@@ -429,20 +440,61 @@ Location: http://localhost:8080/callback?code=a2fa6a0c340b49328e513e47a78ec06f&a
       <div class="io">
         <div class="io-label res-label">Response</div>
         <pre class="res json"><code>{
-  &quot;servedAt&quot;: &quot;2026-06-08T19:16:45.480364Z&quot;,
+  &quot;owner&quot;: &quot;user-001&quot;,
   &quot;messages&quot;: [
     {
-      &quot;id&quot;: 1,
+      &quot;text&quot;: &quot;Welcome, your token is valid!&quot;,
       &quot;from&quot;: &quot;system&quot;,
-      &quot;text&quot;: &quot;Welcome, your token is valid!&quot;
+      &quot;id&quot;: 1
     },
     {
-      &quot;id&quot;: 2,
+      &quot;text&quot;: &quot;This data is protected by an access token.&quot;,
       &quot;from&quot;: &quot;system&quot;,
-      &quot;text&quot;: &quot;This data is protected by an access token.&quot;
+      &quot;id&quot;: 2
     }
   ],
-  &quot;owner&quot;: &quot;user-001&quot;
+  &quot;servedAt&quot;: &quot;2026-06-09T18:49:33.104699Z&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">10</span>Token refresh — renew without re-login</h3>
+      <p>Access tokens are short-lived (300s). When one expires, the API returns <code>401</code> and the client trades its <strong>refresh token</strong> at <code>/token</code> for a fresh set — no user interaction. The refresh token is opaque and <strong>stored server-side</strong>, which is what lets the OP <em>rotate</em> it: each use is single-use and returns a new refresh token. The renewed access token works immediately at the resource server (verified: <code>GET /api/me</code> → <strong>200</strong>).</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code>curl -s -X POST http://localhost:9000/token \
+  -u &#x27;demo-client:demo-secret&#x27; \
+  -d &#x27;grant_type=refresh_token&#x27; \
+  -d &#x27;refresh_token=h4CUv3qU3jxvl_Fs…AOqjaM&#x27;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;access_token&quot;: &quot;eyJraWQiOiIyOTRiOGVjYy1j\u2026ht1wTJqIUZHw&quot;,
+  &quot;token_type&quot;: &quot;Bearer&quot;,
+  &quot;expires_in&quot;: 300,
+  &quot;id_token&quot;: &quot;eyJraWQiOiIyOTRiOGVjYy1j\u2026B1175gH7yB8Q&quot;,
+  &quot;refresh_token&quot;: &quot;-LZBhQjT15MPDNrqsVZMt8DC_SScI_9uN8hwU-lIC20&quot;,
+  &quot;scope&quot;: &quot;openid profile email api.read&quot;
+}</code></pre>
+      </div>
+    </section>
+    <section class="step">
+      <h3><span class="num">10a</span>Rotation — the old refresh token is now dead</h3>
+      <p>Because the OP consumed the presented refresh token and issued a new one, replaying the <em>old</em> value fails. This single-use rotation turns a leaked-and-replayed refresh token into a detectable error.</p>
+      <div class="io">
+        <div class="io-label req-label">Request</div>
+        <pre class="req"><code># reuse the PREVIOUS refresh token (h4CUv3qU3jxvl_Fs…AOqjaM)
+curl -s -X POST http://localhost:9000/token \
+  -u &#x27;demo-client:demo-secret&#x27; \
+  -d &#x27;grant_type=refresh_token&#x27; \
+  -d &#x27;refresh_token=h4CUv3qU3jxvl_Fs…AOqjaM&#x27;</code></pre>
+      </div>
+      <div class="io">
+        <div class="io-label res-label">Response</div>
+        <pre class="res json"><code>{
+  &quot;error_description&quot;: &quot;Unknown or already-used refresh token&quot;,
+  &quot;error&quot;: &quot;invalid_grant&quot;
 }</code></pre>
       </div>
     </section>
@@ -484,9 +536,9 @@ curl -s -i http://localhost:9100/api/messages \
         <pre class="res http"><code>HTTP/1.1 403
 
 {
-  &quot;error_description&quot;: &quot;This endpoint requires the &#x27;api.read&#x27; scope&quot;,
+  &quot;error&quot;: &quot;insufficient_scope&quot;,
   &quot;required_scope&quot;: &quot;api.read&quot;,
-  &quot;error&quot;: &quot;insufficient_scope&quot;
+  &quot;error_description&quot;: &quot;This endpoint requires the &#x27;api.read&#x27; scope&quot;
 }</code></pre>
       </div>
     </section>
@@ -504,9 +556,12 @@ curl -s -i http://localhost:9100/api/messages \
       accepted in the other's place.</li>
   <li><strong>Signature + iss/aud/exp on every API call</strong> — the resource server trusts no token it cannot
       verify against the provider's JWKS, with no shared secret and no call back to the OP per request.</li>
+  <li><strong>Refresh-token rotation</strong> — refresh tokens are opaque and stored server-side, so the OP can
+      <em>rotate</em> them (single-use) and <em>revoke</em> them instantly. Rotation makes a replayed refresh token a
+      detectable failure (step 10a); server-side storage is what self-contained access-token JWTs deliberately give up.</li>
 </ul>
 
-<div class="note-box"><strong>Demo only.</strong> Secrets are hard-coded, users and keys live in memory, transport is
-plain HTTP, and there is no refresh-token or consent handling. The point is to make every protocol step visible.</div>
+<div class="note-box"><strong>Demo only.</strong> Secrets are hard-coded, users, keys and refresh tokens live in
+memory, transport is plain HTTP, and there is no consent handling. The point is to make every protocol step visible.</div>
 
 </body></html>

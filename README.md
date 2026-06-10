@@ -41,6 +41,9 @@ scope-based authorization, and so on. The source is heavily commented for learni
       │  GET /profile        │  GET /api/me, /api/messages (Bearer access_token) ───────►│  validate JWT
       │                     │◄────────────────────────────────────────────────────────┤  via JWKS, serve
       │◄────────────────────┤                            │                              │
+      │   …access token expires (API → 401)…             │                              │
+      │                     │  POST /token grant_type=refresh_token ──►│  rotate + issue│
+      │                     │◄──────────────────────────── new access + refresh token   │
 ```
 
 1. **Authorization request** — the client generates a PKCE `code_verifier`/`code_challenge` and a
@@ -50,12 +53,17 @@ scope-based authorization, and so on. The source is heavily commented for learni
    authorization `code` (and the original `state`).
 4. **Token exchange** — the client calls the OP's `/token` endpoint with the code **and the PKCE
    `code_verifier`**. The OP verifies the verifier against the stored challenge and returns an
-   **ID token** (who the user is) and an **access token** (what the client may do).
+   **ID token** (who the user is), an **access token** (what the client may do), and a
+   **refresh token** (to renew the access token later).
 5. **ID token validation** — the client validates the ID token's RS256 signature (via the OP's JWK
    set), issuer, audience, expiry, and nonce, then establishes a session.
 6. **API access** — the client calls the resource server with the access token as a
    `Authorization: Bearer …` header. The resource server validates the JWT against the OP's JWKS and
    enforces issuer, audience, expiry, and scope.
+7. **Token refresh** — when the access token expires (the API returns `401`), the client trades its
+   **refresh token** at `/token` (`grant_type=refresh_token`) for a fresh access token — silently, with
+   no re-login. The OP **rotates** the refresh token on each use (single-use), so the client stores the
+   new one each time.
 
 ---
 
@@ -147,7 +155,7 @@ All settings live in each module's `src/main/resources/application.yml`. Default
 services together on `localhost`:
 
 - OP issuer: `http://localhost:9000`
-- Token lifetimes: authorization code 60s, access token 300s, ID token 300s
+- Token lifetimes: authorization code 60s, access token 300s, ID token 300s, refresh token 3600s
 - Access-token audience expected by the resource server: `resource-server`
 
 ---
@@ -161,6 +169,6 @@ oidc-demo/
 └── resource-server/        # Protected API (port 9100)
 ```
 
-> ⚠️ **For learning only.** Secrets are hard-coded, users live in memory, tokens are unencrypted, and
-> there is no HTTPS, refresh-token handling, consent screen, or persistence. Do not use any of this
-> as-is in production.
+> ⚠️ **For learning only.** Secrets are hard-coded, users and refresh tokens live in memory, tokens are
+> unencrypted, and there is no HTTPS, consent screen, or persistence. Do not use any of this as-is in
+> production.

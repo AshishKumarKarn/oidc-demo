@@ -19,12 +19,16 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Performs the back-channel call to the OP's token endpoint to redeem an authorization code.
+ * Performs the back-channel calls to the OP's token endpoint.
  *
  * <p>This is the confidential half of the flow: it runs server-to-server (never in the browser) and
- * authenticates the client with HTTP Basic ({@code client_secret_basic}). The request carries the
- * {@code code}, the matching {@code redirect_uri}, and the PKCE {@code code_verifier}. On success the
- * OP returns the {@code access_token} and {@code id_token}.
+ * authenticates the client with HTTP Basic ({@code client_secret_basic}). It handles two grants:
+ * <ul>
+ *   <li>{@link #exchangeCode} &mdash; redeem an authorization code (with the PKCE verifier) for the
+ *       first set of tokens;</li>
+ *   <li>{@link #refresh} &mdash; trade a refresh token for a fresh access token (and a rotated refresh
+ *       token) when the access token has expired, without re-prompting the user.</li>
+ * </ul>
  */
 @Service
 public class TokenClient {
@@ -46,18 +50,38 @@ public class TokenClient {
      *
      * @param code         the code received on the callback
      * @param codeVerifier the PKCE verifier generated at /login (proves we started the flow)
-     * @return the parsed token response
+     * @return the parsed token response (includes a refresh token)
      * @throws TokenExchangeException if the OP returns an error
      */
     public TokenResponse exchangeCode(String code, String codeVerifier) {
-        String tokenEndpoint = discoveryService.getMetadata().tokenEndpoint();
-
-        // application/x-www-form-urlencoded body as required by RFC 6749.
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "authorization_code");
         form.put("code", code);
         form.put("redirect_uri", properties.getRedirectUri());
         form.put("code_verifier", codeVerifier);
+        return post(form);
+    }
+
+    /**
+     * Trades a refresh token for a fresh set of tokens.
+     *
+     * <p>Used when the access token has expired. The OP rotates the refresh token, so the response
+     * carries a <em>new</em> refresh token that the caller must store in place of the old one.
+     *
+     * @param refreshToken the current refresh token
+     * @return the parsed token response (with a new access token and a new refresh token)
+     * @throws TokenExchangeException if the refresh token is invalid/expired
+     */
+    public TokenResponse refresh(String refreshToken) {
+        Map<String, String> form = new LinkedHashMap<>();
+        form.put("grant_type", "refresh_token");
+        form.put("refresh_token", refreshToken);
+        return post(form);
+    }
+
+    /** Shared back-channel POST: client_secret_basic auth, urlencoded body, JSON parse. */
+    private TokenResponse post(Map<String, String> form) {
+        String tokenEndpoint = discoveryService.getMetadata().tokenEndpoint();
         String body = urlEncode(form);
 
         // client_secret_basic: Authorization: Basic base64(clientId:clientSecret)
@@ -82,10 +106,11 @@ public class TokenClient {
                 throw new TokenExchangeException(error + ": " + description);
             }
 
-            log.debug("Token exchange succeeded");
+            log.debug("Token request ({}) succeeded", form.get("grant_type"));
             return new TokenResponse(
                     json.get("access_token").asText(),
-                    json.get("id_token").asText(),
+                    json.has("id_token") ? json.get("id_token").asText() : null,
+                    json.has("refresh_token") ? json.get("refresh_token").asText() : null,
                     json.has("token_type") ? json.get("token_type").asText() : "Bearer",
                     json.has("scope") ? json.get("scope").asText() : "",
                     json.has("expires_in") ? json.get("expires_in").asInt() : 0);
@@ -103,10 +128,11 @@ public class TokenClient {
                 .collect(Collectors.joining("&"));
     }
 
-    /** The successful token-endpoint response. */
+    /** The successful token-endpoint response. {@code idToken}/{@code refreshToken} may be null. */
     public record TokenResponse(
             String accessToken,
             String idToken,
+            String refreshToken,
             String tokenType,
             String scope,
             int expiresIn) {

@@ -16,6 +16,9 @@ oidc:
   authorization-code-ttl-seconds: 60
   access-token-ttl-seconds: 300
   id-token-ttl-seconds: 300
+  # Refresh tokens live far longer than access tokens; the client trades one in for a fresh access
+  # token (and a rotated refresh token) without sending the user back through login.
+  refresh-token-ttl-seconds: 3600
 
 logging:
   level:

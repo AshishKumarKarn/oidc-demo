@@ -41,10 +41,17 @@
 
     <div class="card">
         <h2>Tokens (previews)</h2>
+        <div th:if="${tokenRefreshed}"
+             style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;padding:8px 10px;border-radius:6px;font-size:13px;margin-bottom:12px;">
+            &#9851; The access token had expired &mdash; it was <strong>silently refreshed</strong> using the
+            refresh token (no re-login). The refresh token below is the rotated, new value.
+        </div>
         <p>Access token:</p>
         <div class="token" th:text="${accessTokenPreview}">eyJ...</div>
         <p style="margin-top:12px;">ID token:</p>
         <div class="token" th:text="${idTokenPreview}">eyJ...</div>
+        <p style="margin-top:12px;">Refresh token (opaque, stored server-side):</p>
+        <div class="token" th:text="${refreshTokenPreview}">xY3...</div>
     </div>
 
     <div class="card">

@@ -23,6 +23,10 @@ public class AuthServerProperties {
     /** ID-token lifetime in seconds. */
     private long idTokenTtlSeconds = 300;
 
+    /** Refresh-token lifetime in seconds. Much longer than the access token: its whole purpose is to
+     *  outlive access tokens and mint replacements without re-prompting the user. */
+    private long refreshTokenTtlSeconds = 3600;
+
     public String getIssuer() {
         return issuer;
     }
@@ -53,5 +57,13 @@ public class AuthServerProperties {
 
     public void setIdTokenTtlSeconds(long idTokenTtlSeconds) {
         this.idTokenTtlSeconds = idTokenTtlSeconds;
+    }
+
+    public long getRefreshTokenTtlSeconds() {
+        return refreshTokenTtlSeconds;
+    }
+
+    public void setRefreshTokenTtlSeconds(long refreshTokenTtlSeconds) {
+        this.refreshTokenTtlSeconds = refreshTokenTtlSeconds;
     }
 }
